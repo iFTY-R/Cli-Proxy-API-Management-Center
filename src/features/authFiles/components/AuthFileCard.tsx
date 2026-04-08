@@ -1,8 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/Button';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
-import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
   IconDownload,
   IconInfo,
@@ -10,13 +6,15 @@ import {
   IconSettings,
   IconTrash2,
 } from '@/components/ui/icons';
+import { Button } from '@/components/ui/Button';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { ProviderStatusBar } from '@/components/providers/ProviderStatusBar';
 import type { AuthFileItem } from '@/types';
-import { resolveAuthProvider } from '@/utils/quota';
 import { calculateStatusBarData, normalizeAuthIndex, type KeyStats } from '@/utils/usage';
 import { formatFileSize } from '@/utils/format';
 import {
-  QUOTA_PROVIDER_TYPES,
   formatModified,
   getAuthFileIcon,
   getAuthFileStatusMessage,
@@ -25,11 +23,11 @@ import {
   isRuntimeOnlyAuthFile,
   parsePriorityValue,
   resolveAuthFileStats,
-  type QuotaProviderType,
   type ResolvedTheme,
 } from '@/features/authFiles/constants';
 import type { AuthFileStatusBarData } from '@/features/authFiles/hooks/useAuthFilesStatusBarCache';
 import { AuthFileQuotaSection } from '@/features/authFiles/components/AuthFileQuotaSection';
+import { canViewAuthFileQuota, resolveAuthFileQuotaType } from '@/features/authFiles/quota';
 import styles from '@/pages/AuthFilesPage.module.scss';
 
 const HEALTHY_STATUS_MESSAGES = new Set(['ok', 'healthy', 'ready', 'success', 'available']);
@@ -42,7 +40,6 @@ export type AuthFileCardProps = {
   disableControls: boolean;
   deleting: string | null;
   statusUpdating: Record<string, boolean>;
-  quotaFilterType: QuotaProviderType | null;
   keyStats: KeyStats;
   statusBarCache: Map<string, AuthFileStatusBarData>;
   onShowModels: (file: AuthFileItem) => void;
@@ -51,12 +48,6 @@ export type AuthFileCardProps = {
   onDelete: (name: string) => void;
   onToggleStatus: (file: AuthFileItem, enabled: boolean) => void;
   onToggleSelect: (name: string) => void;
-};
-
-const resolveQuotaType = (file: AuthFileItem): QuotaProviderType | null => {
-  const provider = resolveAuthProvider(file);
-  if (!QUOTA_PROVIDER_TYPES.has(provider as QuotaProviderType)) return null;
-  return provider as QuotaProviderType;
 };
 
 export function AuthFileCard(props: AuthFileCardProps) {
@@ -69,7 +60,6 @@ export function AuthFileCard(props: AuthFileCardProps) {
     disableControls,
     deleting,
     statusUpdating,
-    quotaFilterType,
     keyStats,
     statusBarCache,
     onShowModels,
@@ -88,21 +78,20 @@ export function AuthFileCard(props: AuthFileCardProps) {
   const typeLabel = getTypeLabel(t, file.type || 'unknown');
   const providerIcon = getAuthFileIcon(file.type || 'unknown', resolvedTheme);
 
-  const quotaType =
-    quotaFilterType && resolveQuotaType(file) === quotaFilterType ? quotaFilterType : null;
-
-  const showQuotaLayout = Boolean(quotaType) && !isRuntimeOnly && !compact;
+  const quotaType = resolveAuthFileQuotaType(file);
+  const canViewQuota = canViewAuthFileQuota(file);
+  const showQuotaLayout = Boolean(quotaType) && canViewQuota && !compact;
 
   const providerCardClass =
-    quotaType === 'antigravity'
+    showQuotaLayout && quotaType === 'antigravity'
       ? styles.antigravityCard
-      : quotaType === 'claude'
+      : showQuotaLayout && quotaType === 'claude'
         ? styles.claudeCard
-        : quotaType === 'codex'
+        : showQuotaLayout && quotaType === 'codex'
           ? styles.codexCard
-          : quotaType === 'gemini-cli'
+          : showQuotaLayout && quotaType === 'gemini-cli'
             ? styles.geminiCliCard
-            : quotaType === 'kimi'
+            : showQuotaLayout && quotaType === 'kimi'
               ? styles.kimiCard
               : '';
 

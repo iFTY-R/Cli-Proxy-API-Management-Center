@@ -46,6 +46,15 @@
   }
 }
 
+.refreshAllQuotaButton:global(.btn.btn-sm) {
+  > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+}
+
 .titleWrapper {
   display: flex;
   align-items: center;

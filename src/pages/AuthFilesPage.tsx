@@ -20,14 +20,14 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { IconFilterAll } from '@/components/ui/icons';
+import { IconFilterAll, IconRefreshCw } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import type { AuthFileItem } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import {
   MAX_CARD_PAGE_SIZE,
   MIN_CARD_PAGE_SIZE,
-  QUOTA_PROVIDER_TYPES,
   clampCardPageSize,
   getAuthFileIcon,
   getTypeColor,
@@ -40,6 +40,12 @@ import {
   type ResolvedTheme,
 } from '@/features/authFiles/constants';
 import { AuthFileCard } from '@/features/authFiles/components/AuthFileCard';
+import {
+  canRefreshAuthFileQuota,
+  canViewAuthFileQuota,
+  refreshQuotaTargets,
+  resolveAuthFileQuotaType,
+} from '@/features/authFiles/quota';
 import { AuthFileModelsModal } from '@/features/authFiles/components/AuthFileModelsModal';
 import { AuthFilesPrefixProxyEditorModal } from '@/features/authFiles/components/AuthFilesPrefixProxyEditorModal';
 import { OAuthExcludedCard } from '@/features/authFiles/components/OAuthExcludedCard';
@@ -58,7 +64,19 @@ import {
   writePersistedAuthFilesCompactMode,
   type AuthFilesSortMode,
 } from '@/features/authFiles/uiState';
-import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import {
+  useAuthStore,
+  useNotificationStore,
+  useQuotaStore,
+  useThemeStore,
+} from '@/stores';
+import {
+  ANTIGRAVITY_CONFIG,
+  CLAUDE_CONFIG,
+  CODEX_CONFIG,
+  GEMINI_CLI_CONFIG,
+  KIMI_CONFIG,
+} from '@/components/quota';
 import styles from './AuthFilesPage.module.scss';
 
 const easePower3Out = (progress: number) => 1 - (1 - progress) ** 4;
@@ -67,6 +85,16 @@ const BATCH_BAR_BASE_TRANSFORM = 'translateX(-50%)';
 const BATCH_BAR_HIDDEN_TRANSFORM = 'translateX(-50%) translateY(56px)';
 const DEFAULT_REGULAR_PAGE_SIZE = 9;
 const DEFAULT_COMPACT_PAGE_SIZE = 12;
+
+type QuotaRefreshGroups = Record<QuotaProviderType, AuthFileItem[]>;
+
+const createEmptyQuotaRefreshGroups = (): QuotaRefreshGroups => ({
+  antigravity: [],
+  claude: [],
+  codex: [],
+  'gemini-cli': [],
+  kimi: [],
+});
 
 const escapeWildcardSearchSegment = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -82,6 +110,11 @@ export function AuthFilesPage() {
   const showNotification = useNotificationStore((state) => state.showNotification);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
+  const setAntigravityQuota = useQuotaStore((state) => state.setAntigravityQuota);
+  const setClaudeQuota = useQuotaStore((state) => state.setClaudeQuota);
+  const setCodexQuota = useQuotaStore((state) => state.setCodexQuota);
+  const setGeminiCliQuota = useQuotaStore((state) => state.setGeminiCliQuota);
+  const setKimiQuota = useQuotaStore((state) => state.setKimiQuota);
   const pageTransitionLayer = usePageTransitionLayer();
   const isCurrentLayer = pageTransitionLayer ? pageTransitionLayer.status === 'current' : true;
   const navigate = useNavigate();
@@ -99,6 +132,7 @@ export function AuthFilesPage() {
   const [viewMode, setViewMode] = useState<'diagram' | 'list'>('list');
   const [sortMode, setSortMode] = useState<AuthFilesSortMode>('default');
   const [batchActionBarVisible, setBatchActionBarVisible] = useState(false);
+  const [refreshingAllQuota, setRefreshingAllQuota] = useState(false);
   const [uiStateHydrated, setUiStateHydrated] = useState(false);
   const floatingBatchActionsRef = useRef<HTMLDivElement>(null);
   const batchActionAnimationRef = useRef<AnimationPlaybackControlsWithThen | null>(null);
@@ -179,12 +213,6 @@ export function AuthFilesPage() {
   });
 
   const disableControls = connectionStatus !== 'connected';
-  const normalizedFilter = normalizeProviderKey(String(filter));
-  const quotaFilterType: QuotaProviderType | null = QUOTA_PROVIDER_TYPES.has(
-    normalizedFilter as QuotaProviderType
-  )
-    ? (normalizedFilter as QuotaProviderType)
-    : null;
   const pageSize = compactMode ? pageSizeByMode.compact : pageSizeByMode.regular;
 
   useEffect(() => {
@@ -423,6 +451,21 @@ export function AuthFilesPage() {
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
   const pageItems = sorted.slice(start, start + pageSize);
+  const hasVisibleQuotaCards = !compactMode && pageItems.some((file) => canViewAuthFileQuota(file));
+  const quotaRefreshGroups = useMemo(() => {
+    const groups = createEmptyQuotaRefreshGroups();
+    sorted.forEach((file) => {
+      if (!canRefreshAuthFileQuota(file)) return;
+      const quotaType = resolveAuthFileQuotaType(file);
+      if (!quotaType) return;
+      groups[quotaType].push(file);
+    });
+    return groups;
+  }, [sorted]);
+  const quotaRefreshTargetCount = useMemo(
+    () => Object.values(quotaRefreshGroups).reduce((sum, items) => sum + items.length, 0),
+    [quotaRefreshGroups]
+  );
   const selectablePageItems = useMemo(
     () => pageItems.filter((file) => !isRuntimeOnlyAuthFile(file)),
     [pageItems]
@@ -484,6 +527,59 @@ export function AuthFilesPage() {
     },
     [filter, navigate]
   );
+
+  const handleRefreshAllQuota = useCallback(async () => {
+    if (disableControls || refreshingAllQuota || quotaRefreshTargetCount === 0) return;
+
+    setRefreshingAllQuota(true);
+    try {
+      await Promise.all([
+        refreshQuotaTargets({
+          config: CLAUDE_CONFIG,
+          setQuota: setClaudeQuota,
+          targets: quotaRefreshGroups.claude,
+          t,
+        }),
+        refreshQuotaTargets({
+          config: ANTIGRAVITY_CONFIG,
+          setQuota: setAntigravityQuota,
+          targets: quotaRefreshGroups.antigravity,
+          t,
+        }),
+        refreshQuotaTargets({
+          config: CODEX_CONFIG,
+          setQuota: setCodexQuota,
+          targets: quotaRefreshGroups.codex,
+          t,
+        }),
+        refreshQuotaTargets({
+          config: GEMINI_CLI_CONFIG,
+          setQuota: setGeminiCliQuota,
+          targets: quotaRefreshGroups['gemini-cli'],
+          t,
+        }),
+        refreshQuotaTargets({
+          config: KIMI_CONFIG,
+          setQuota: setKimiQuota,
+          targets: quotaRefreshGroups.kimi,
+          t,
+        }),
+      ]);
+    } finally {
+      setRefreshingAllQuota(false);
+    }
+  }, [
+    disableControls,
+    quotaRefreshGroups,
+    quotaRefreshTargetCount,
+    refreshingAllQuota,
+    setAntigravityQuota,
+    setClaudeQuota,
+    setCodexQuota,
+    setGeminiCliQuota,
+    setKimiQuota,
+    t,
+  ]);
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') return;
@@ -657,6 +753,20 @@ export function AuthFilesPage() {
               {t('common.refresh')}
             </Button>
             <Button
+              variant="secondary"
+              size="sm"
+              className={styles.refreshAllQuotaButton}
+              onClick={() => void handleRefreshAllQuota()}
+              disabled={
+                disableControls || loading || refreshingAllQuota || quotaRefreshTargetCount === 0
+              }
+              loading={refreshingAllQuota}
+              title={t('auth_files.quota_refresh_all_button')}
+            >
+              {!refreshingAllQuota && <IconRefreshCw size={16} />}
+              {t('auth_files.quota_refresh_all_button')}
+            </Button>
+            <Button
               size="sm"
               onClick={handleUploadClick}
               disabled={disableControls || uploading}
@@ -783,7 +893,7 @@ export function AuthFilesPage() {
               />
             ) : (
               <div
-                className={`${styles.fileGrid} ${quotaFilterType ? styles.fileGridQuotaManaged : ''} ${compactMode ? styles.fileGridCompact : ''}`}
+                className={`${styles.fileGrid} ${hasVisibleQuotaCards ? styles.fileGridQuotaManaged : ''} ${compactMode ? styles.fileGridCompact : ''}`}
               >
                 {pageItems.map((file) => (
                   <AuthFileCard
@@ -795,7 +905,6 @@ export function AuthFilesPage() {
                     disableControls={disableControls}
                     deleting={deleting}
                     statusUpdating={statusUpdating}
-                    quotaFilterType={quotaFilterType}
                     keyStats={keyStats}
                     statusBarCache={statusBarCache}
                     onShowModels={showModels}

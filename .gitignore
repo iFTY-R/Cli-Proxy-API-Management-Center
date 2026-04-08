@@ -32,3 +32,13 @@ settings.local.json
 *.njsproj
 *.sln
 *.sw?
+
+# Claude / OMC
+.claude/
+.omc/
+.omx/
+
+# Claude / OMC
+.claude/
+.omc/
+.omx/
