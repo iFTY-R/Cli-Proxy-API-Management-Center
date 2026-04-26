@@ -470,7 +470,7 @@
     "openai_test_all_partial": "Test completed: {{success}} passed, {{failed}} failed",
     "search_placeholder": "Search configs (keys, URLs, models...)",
     "search_empty_title": "No matching configs",
-    "search_empty_desc": "Try a different keyword or clear the search box"
+    "search_empty_desc": "Try a different keyword or clear the search box",
     "model_search_placeholder": "Filter by models...",
     "model_search_clear": "Clear",
     "model_select_all": "Select All",

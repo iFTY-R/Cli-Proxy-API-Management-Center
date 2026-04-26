@@ -470,7 +470,7 @@
     "openai_test_all_partial": "测试完成：{{success}} 个通过，{{failed}} 个失败",
     "search_placeholder": "搜索配置（密钥、地址、模型等）",
     "search_empty_title": "没有匹配的配置",
-    "search_empty_desc": "请尝试更换关键字或清空搜索框"
+    "search_empty_desc": "请尝试更换关键字或清空搜索框",
     "model_search_placeholder": "按模型筛选...",
     "model_search_clear": "清除",
     "model_select_all": "全选",
