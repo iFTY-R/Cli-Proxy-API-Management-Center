@@ -233,8 +233,8 @@ export function MainLayout() {
   // 全局自动备份：只要管理中心打开即生效，无需停留在备份页面
   useAutoBackup();
 
-  const apiBase = useAuthStore((state) => state.apiBase);
-  const connectionStatus = useAuthStore((state) => state.connectionStatus);
+  // const apiBase = useAuthStore((state) => state.apiBase);
+  // const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const logout = useAuthStore((state) => state.logout);
 
   const config = useConfigStore((state) => state.config);
