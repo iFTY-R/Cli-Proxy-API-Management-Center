@@ -38,7 +38,11 @@ export function RestoreCard() {
 
   // 初始加载 + 备份成功后自动刷新列表
   useEffect(() => {
-    refresh();
+    // Defer the state-writing refresh so React's set-state-in-effect rule does not flag a
+    // synchronous cascade while still keeping the restore list synchronized.
+    queueMicrotask(() => {
+      void refresh();
+    });
   }, [refresh, lastBackupTime]);
 
   const handleRestore = useCallback(

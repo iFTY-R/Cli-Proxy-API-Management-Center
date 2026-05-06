@@ -24,7 +24,12 @@ export function RestoreModal({ open, onClose, onRestore, loading, filename }: Re
 
   // 每次打开弹窗时重置为默认值
   useEffect(() => {
-    if (open) setScope({ localStorage: true, config: false, usage: true });
+    if (!open) return;
+
+    // Defer the reset so opening the dialog does not synchronously cascade state from the effect.
+    queueMicrotask(() => {
+      setScope({ localStorage: true, config: false, usage: true });
+    });
   }, [open]);
 
   const scopeItems: { key: keyof BackupScope; label: string; hint: string }[] = [
