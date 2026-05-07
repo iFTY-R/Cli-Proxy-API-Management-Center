@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import {
@@ -56,7 +56,8 @@ export function AuthFileQuotaSection(props: AuthFileQuotaSectionProps) {
     return state.setGeminiCliQuota as unknown as (updater: unknown) => void;
   });
 
-  const refreshQuotaForFile = useCallback(async () => {
+  const refreshQuotaForFile = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     if (disableControls) return;
     if (isRuntimeOnlyAuthFile(file)) return;
     if (file.disabled) return;
@@ -82,7 +83,9 @@ export function AuthFileQuotaSection(props: AuthFileQuotaSectionProps) {
         ...prev,
         [file.name]: config.buildSuccessState(data)
       }));
-      showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
+      if (!silent) {
+        showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('common.unknown_error');
       const status = getStatusFromError(err);
@@ -90,7 +93,9 @@ export function AuthFileQuotaSection(props: AuthFileQuotaSectionProps) {
         ...prev,
         [file.name]: config.buildErrorState(message, status)
       }));
-      showNotification(t('auth_files.quota_refresh_failed', { name: file.name, message }), 'error');
+      if (!silent) {
+        showNotification(t('auth_files.quota_refresh_failed', { name: file.name, message }), 'error');
+      }
     }
   }, [disableControls, file, quota?.status, quotaType, showNotification, t, updateQuotaState]);
 
@@ -106,6 +111,12 @@ export function AuthFileQuotaSection(props: AuthFileQuotaSectionProps) {
     quota?.errorStatus,
     quota?.error || t('common.unknown_error')
   );
+
+  useEffect(() => {
+    if (quotaStatus !== 'idle') return;
+    if (!canRefreshQuota) return;
+    void refreshQuotaForFile({ silent: true });
+  }, [canRefreshQuota, quotaStatus, refreshQuotaForFile]);
 
   return (
     <div className={styles.quotaSection}>
